@@ -807,7 +807,10 @@ export default class CNextCompletionProvider
    */
   private isInTypeContext(linePrefix: string): boolean {
     // After colon (`x: `), or a register member's access modifier: "0x00 rw "
-    if (/:\s*$/.test(linePrefix) || /\s(?:rw|ro|wo|w1c|w1s)\s+$/.test(linePrefix)) {
+    if (
+      /:\s*$/.test(linePrefix) ||
+      /\s(?:rw|ro|wo|w1c|w1s)\s+$/.test(linePrefix)
+    ) {
       return true;
     }
     // At start of variable declaration (simplified check)
