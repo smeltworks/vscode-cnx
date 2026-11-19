@@ -797,17 +797,17 @@ export default class CNextCompletionProvider
    * Check if cursor is in a register member definition context
    */
   private isInRegisterContext(linePrefix: string): boolean {
-    // Inside register block, after type declaration
-    // e.g., "    DR: u32 " <- expecting access modifier
-    return /^\s+\w+\s*:\s*\w+\s+$/.test(linePrefix);
+    // Inside a register block, after the member's offset (ADR-072)
+    // e.g., "    0x00 " <- expecting access modifier
+    return /^\s+(?:0x[0-9a-fA-F]+|\d+)\s+$/.test(linePrefix);
   }
 
   /**
    * Check if cursor is in a type context
    */
   private isInTypeContext(linePrefix: string): boolean {
-    // After colon in register member: "DR: "
-    if (/:\s*$/.test(linePrefix)) {
+    // After colon (`x: `), or a register member's access modifier: "0x00 rw "
+    if (/:\s*$/.test(linePrefix) || /\s(?:rw|ro|wo|w1c|w1s)\s+$/.test(linePrefix)) {
       return true;
     }
     // At start of variable declaration (simplified check)
