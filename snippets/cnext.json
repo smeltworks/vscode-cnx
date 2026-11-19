@@ -22,16 +22,18 @@
   "Register": {
     "prefix": "register",
     "body": [
-      "register ${1:Name} @ ${2:0x00000000} {",
-      "\t${3:field}: ${4:u32} ${5|rw,ro,wo,w1c,w1s|};",
+      "register ${1:Name} {",
+      "\t${2:0x00} ${3|rw,ro,wo,w1c,w1s|} ${4:u32} ${5:field},",
       "\t$0",
-      "}"
+      "}",
+      "",
+      "${1:Name} ${6:INSTANCE}(${7:0x00000000});"
     ],
-    "description": "Hardware register binding for memory-mapped I/O"
+    "description": "Register type and a fixed-address instance (ADR-072)"
   },
   "Register Member": {
     "prefix": "regmem",
-    "body": "${1:field}: ${2:u32} ${3|rw,ro,wo,w1c,w1s|};",
+    "body": "${1:0x00} ${2|rw,ro,wo,w1c,w1s|} ${3:u32} ${4:field},",
     "description": "Register member with access modifier"
   },
   "Struct": {
