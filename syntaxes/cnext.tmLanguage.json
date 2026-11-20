@@ -101,7 +101,35 @@
             "1": { "name": "punctuation.definition.block.end.cnext" }
           },
           "patterns": [
+            { "include": "#register-group" },
             { "include": "#register-field" },
+            { "include": "#comments" }
+          ]
+        }
+      ]
+    },
+    "register-group": {
+      "patterns": [
+        {
+          "name": "meta.register.group.cnext",
+          "begin": "(0x[0-9a-fA-F]+|\\d+|\\w+)\\s*(\\{)",
+          "beginCaptures": {
+            "1": { "name": "constant.numeric.cnext" },
+            "2": { "name": "punctuation.definition.block.begin.cnext" }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.block.end.cnext" }
+          },
+          "patterns": [
+            {
+              "match": "\\b(rw|ro|wo|w1c|w1s)\\s+(\\w+)\\s+(\\w+)",
+              "captures": {
+                "1": { "name": "storage.modifier.cnext" },
+                "2": { "name": "storage.type.cnext" },
+                "3": { "name": "entity.name.field.register.cnext" }
+              }
+            },
             { "include": "#comments" }
           ]
         }
