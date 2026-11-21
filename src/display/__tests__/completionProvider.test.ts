@@ -711,6 +711,8 @@ describe("register member completions", () => {
     ["an offset expression", "register R {\n    BASE + 4 "],
     ["a group member's start", "register R {\n    0x00 {\n        "],
     ["a partly typed modifier", "register R {\n    0x00 r"],
+    ["a group member on the brace's line", "register R {\n    0x00 { "],
+    ["a member after another on one line", "register R { 0x00 rw u8 A, 0x04 "],
     [
       "a member after a group",
       "register R {\n    0x00 {\n        ro u8 A,\n    },\n    0x04 ",
@@ -739,5 +741,11 @@ describe("register member completions", () => {
       await labelsAt("register R {\n    0x00 rw u8 A,\n}\n0x00 "),
     ).not.toEqual(MODIFIERS);
     expect(await labelsAt("Point p <- {x: ")).not.toEqual(types);
+  });
+
+  it("offers neither while an offset expression is unfinished", async () => {
+    expect(await labelsAt("register R {\n    BASE + ")).not.toEqual(MODIFIERS);
+    expect(await labelsAt("register R {\n    BASE + O")).not.toEqual(MODIFIERS);
+    expect(await labelsAt("register R {\n    (BASE ")).not.toEqual(MODIFIERS);
   });
 });

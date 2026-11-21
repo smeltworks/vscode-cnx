@@ -109,6 +109,7 @@ const ACCESS_MODIFIERS = ["rw", "ro", "wo", "w1c", "w1s"];
 const ACCESS_MODIFIER_BEFORE_CURSOR = new RegExp(
   `\\s(?:${ACCESS_MODIFIERS.join("|")})\\s+$`,
 );
+const OFFSET_CONTINUES = /[-+*/%&|^~<>(!]$/;
 const ACCESS_MODIFIER_WORD = new RegExp(
   `\\b(?:${ACCESS_MODIFIERS.join("|")})\\b`,
 );
@@ -812,16 +813,25 @@ export default class CNextCompletionProvider
 
   /**
    * Whether a register member's access modifier comes next: in a register
-   * body after the offset, any constant expression (`0x00 `, `BASE + 4 `);
-   * in an offset group at the start of a member
+   * body after a complete offset, any constant expression (`0x00 `,
+   * `BASE + 4 `, but not `BASE + ` or `(BASE `); in an offset group at the
+   * start of a member. A member starts after the line's last `{` or `,`.
    */
   private static expectsAccessModifier(
     block: "register" | "group",
     stem: string,
   ): boolean {
-    if (block === "group") return stem.trim() === "";
+    const member = stem.slice(
+      Math.max(stem.lastIndexOf("{"), stem.lastIndexOf(",")) + 1,
+    );
+    const offset = member.trim();
+    if (block === "group") return offset === "";
     return (
-      stem.trim() !== "" && /\s$/.test(stem) && !ACCESS_MODIFIER_WORD.test(stem)
+      offset !== "" &&
+      /\s$/.test(member) &&
+      !ACCESS_MODIFIER_WORD.test(offset) &&
+      !OFFSET_CONTINUES.test(offset) &&
+      offset.split("(").length === offset.split(")").length
     );
   }
 
