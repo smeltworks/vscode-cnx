@@ -42,6 +42,8 @@ function matchFunctionDeclaration(line: string): string | null {
   return funcName;
 }
 
+const REGISTER_OPENER = /\bregister\s+\w+\s*$/;
+
 export default class ScopeTracker {
   /**
    * Get the name of a context (scope or function) at the given cursor position
@@ -105,6 +107,42 @@ export default class ScopeTracker {
     }
 
     return currentName;
+  }
+
+  /**
+   * The register block the end of `textBefore` sits in (ADR-072): a
+   * `register X {` body, an offset group inside one, or neither (null)
+   */
+  static getRegisterBlock(textBefore: string): "register" | "group" | null {
+    const stack: Array<"register" | "group" | "other"> = [];
+    let opener = "";
+    for (const line of textBefore.split("\n")) {
+      for (const ch of stripComments(line)) {
+        if (ch === "{") {
+          stack.push(ScopeTracker.blockKind(opener, stack.at(-1)));
+          opener = "";
+        } else if (ch === "}") {
+          stack.pop();
+          opener = "";
+        } else if (ch === ";") {
+          opener = "";
+        } else {
+          opener += ch;
+        }
+      }
+      opener += "\n";
+    }
+    const top = stack.at(-1);
+    return top === "register" || top === "group" ? top : null;
+  }
+
+  private static blockKind(
+    opener: string,
+    enclosing: "register" | "group" | "other" | undefined,
+  ): "register" | "group" | "other" {
+    if (REGISTER_OPENER.test(opener)) return "register";
+    if (enclosing === "register") return "group";
+    return "other";
   }
 
   static getCurrentScope(source: string, cursorLine: number): string | null {

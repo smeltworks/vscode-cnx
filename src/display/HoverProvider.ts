@@ -58,7 +58,8 @@ const TYPE_INFO: Record<string, { description: string; bits: number }> = {
  */
 const KEYWORD_INFO: Record<string, string> = {
   // Declaration keywords
-  register: "Declares a hardware register binding with memory-mapped I/O",
+  register:
+    "Declares a register type; an instance `Type NAME(address);` fixes it at an address (ADR-072)",
   scope: "Declares a singleton service with prefixed member names (ADR-016)",
   class: "Declares a type with fields and methods (instances via pointer)",
   struct: "Declares a data structure (ADR-014)",
@@ -497,7 +498,7 @@ function buildHoverContent(
         md,
         "register",
         displayName,
-        "Hardware register binding for memory-mapped I/O.",
+        "Register type, or an instance of one fixed at an address (ADR-072).",
       );
       break;
     case "function":

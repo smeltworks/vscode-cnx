@@ -12,6 +12,7 @@ import {
   extractTrailingWord,
   parseMemberAccessChain,
   countBraceChange,
+  stripComments,
 } from "../state/utils";
 import {
   getAccessDescription,
@@ -106,6 +107,20 @@ const TYPES = [
  * Register access modifiers
  */
 const ACCESS_MODIFIERS = ["rw", "ro", "wo", "w1c", "w1s"];
+const ACCESS_MODIFIER_BEFORE_CURSOR = new RegExp(
+  `\\s(?:${ACCESS_MODIFIERS.join("|")})\\s+$`,
+);
+// "type" is a C header's typedef (parseCHeader); parseSymbols never sends it
+const REGISTER_MEMBER_USER_TYPE_KINDS = new Set([
+  "bitmap",
+  "enum",
+  "struct",
+  "type",
+]);
+const OFFSET_CONTINUES = /[-+*/%&|^~<>(!:]$/;
+const ACCESS_MODIFIER_WORD = new RegExp(
+  `\\b(?:${ACCESS_MODIFIERS.join("|")})\\b`,
+);
 
 /**
  * Boolean and null literals
@@ -292,6 +307,20 @@ function createSymbolCompletion(symbol: ISymbolInfo): vscode.CompletionItem {
 }
 
 /**
+ * Create a completion item for a symbol of an included file, with the
+ * file's name after its detail
+ */
+function createIncludedSymbolCompletion(
+  symbol: ISymbolInfo & { sourceFile?: string },
+): vscode.CompletionItem {
+  const item = createSymbolCompletion(symbol);
+  if (symbol.sourceFile) {
+    item.detail = `${item.detail || ""} (${path.basename(symbol.sourceFile)})`;
+  }
+  return item;
+}
+
+/**
  * C-Next Completion Provider
  * Provides context-aware autocomplete for C-Next source files
  * Queries C/C++ extension for stdlib and Arduino completions via generated .c/.cpp files
@@ -423,13 +452,30 @@ export default class CNextCompletionProvider
       return cppMembers;
     }
 
-    // Check if we're in a register member context (after access modifier)
-    if (this.isInRegisterContext(linePrefix)) {
-      return this.getAccessModifierCompletions();
+    // Inside a register or one of its offset groups (ADR-072). The partial
+    // word being typed is left off, so the list shows while typing.
+    const registerBlock = ScopeTracker.getRegisterBlock(
+      [...source.split("\n").slice(0, position.line), linePrefix].join("\n"),
+    );
+    if (registerBlock !== null) {
+      const word = extractTrailingWord(linePrefix);
+      const stem = stripComments(
+        word ? linePrefix.slice(0, -word.length) : linePrefix,
+      );
+      if (ACCESS_MODIFIER_BEFORE_CURSOR.test(stem)) {
+        return this.getRegisterMemberTypeCompletions(
+          symbols,
+          document.uri,
+          currentScope,
+        );
+      }
+      if (CNextCompletionProvider.expectsAccessModifier(registerBlock, stem)) {
+        return this.getAccessModifierCompletions();
+      }
     }
 
     // Check if we're in a type context
-    if (this.isInTypeContext(linePrefix)) {
+    if (registerBlock === null && this.isInTypeContext(linePrefix)) {
       return this.getTypeCompletions();
     }
 
@@ -709,6 +755,38 @@ export default class CNextCompletionProvider
   }
 
   /**
+   * The types a register member can have: the primitives except the bitmapN
+   * keywords, which only begin a bitmap declaration, and the bitmaps, enums,
+   * structs and C typedefs of this file, its includes and the current scope
+   * (a register type is E0936)
+   */
+  private getRegisterMemberTypeCompletions(
+    symbols: ISymbolInfo[],
+    documentUri: vscode.Uri,
+    currentScope: string | null,
+  ): vscode.CompletionItem[] {
+    const isMemberType = (s: ISymbolInfo): boolean =>
+      (!s.parentId || s.parentId === currentScope) &&
+      REGISTER_MEMBER_USER_TYPE_KINDS.has(s.kind);
+    const included = this.workspaceIndex?.getIncludedSymbols(documentUri) ?? [];
+    const items = [
+      ...this.getTypeCompletions().filter(
+        (item) => !/^bitmap\d+$/.test(String(item.label)),
+      ),
+      ...symbols.filter(isMemberType).map(createSymbolCompletion),
+      ...included.filter(isMemberType).map(createIncludedSymbolCompletion),
+    ];
+    // parseCHeader sends a typedef'd struct twice, as "struct" and as "type"
+    const labels = new Set<string>();
+    return items.filter((item) => {
+      const label = String(item.label);
+      if (labels.has(label)) return false;
+      labels.add(label);
+      return true;
+    });
+  }
+
+  /**
    * Get completions for type contexts
    */
   private getTypeCompletions(): vscode.CompletionItem[] {
@@ -781,12 +859,7 @@ export default class CNextCompletionProvider
     if (this.workspaceIndex && documentUri) {
       const headerSymbols = this.workspaceIndex.getIncludedSymbols(documentUri);
       for (const sym of headerSymbols) {
-        const item = createSymbolCompletion(sym);
-        // Mark as coming from a header
-        if (sym.sourceFile) {
-          item.detail = `${item.detail || ""} (${path.basename(sym.sourceFile)})`;
-        }
-        items.push(item);
+        items.push(createIncludedSymbolCompletion(sym));
       }
     }
 
@@ -794,22 +867,40 @@ export default class CNextCompletionProvider
   }
 
   /**
-   * Check if cursor is in a register member definition context
+   * Whether a register member's access modifier comes next: in a register
+   * body after a complete offset, any constant expression (`0x00 `,
+   * `BASE + 4 `, `(mode = 1) ? 0x10 : 0x20 `, but not `BASE + `, `(BASE ` or
+   * `(mode = 1) ? 0x10 `); in an offset group at the start of a member. A
+   * member starts after the line's last `{`, `}` or `,`.
    */
-  private isInRegisterContext(linePrefix: string): boolean {
-    // Inside register block, after type declaration
-    // e.g., "    DR: u32 " <- expecting access modifier
-    return /^\s+\w+\s*:\s*\w+\s+$/.test(linePrefix);
+  private static expectsAccessModifier(
+    block: "register" | "group",
+    stem: string,
+  ): boolean {
+    const member = stem.slice(
+      Math.max(
+        stem.lastIndexOf("{"),
+        stem.lastIndexOf("}"),
+        stem.lastIndexOf(","),
+      ) + 1,
+    );
+    const offset = member.trim();
+    if (block === "group") return offset === "";
+    return (
+      offset !== "" &&
+      /\s$/.test(member) &&
+      !ACCESS_MODIFIER_WORD.test(offset) &&
+      !OFFSET_CONTINUES.test(offset) &&
+      // an earlier line may open the ( or ? that this line closes
+      offset.split("(").length <= offset.split(")").length &&
+      offset.split("?").length <= offset.split(":").length
+    );
   }
 
   /**
    * Check if cursor is in a type context
    */
   private isInTypeContext(linePrefix: string): boolean {
-    // After colon in register member: "DR: "
-    if (/:\s*$/.test(linePrefix)) {
-      return true;
-    }
     // At start of variable declaration (simplified check)
     if (/^\s*$/.test(linePrefix)) {
       return true;
