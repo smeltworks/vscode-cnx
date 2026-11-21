@@ -735,9 +735,6 @@ export default class CNextCompletionProvider
   }
 
   /**
-   * Get completions for type contexts
-   */
-  /**
    * The types a register member can have: the primitives except the bitmapN
    * keywords, which only begin a bitmap declaration, and the bitmaps, enums
    * and structs of this file, its includes and the current scope (a register
@@ -762,6 +759,9 @@ export default class CNextCompletionProvider
     ];
   }
 
+  /**
+   * Get completions for type contexts
+   */
   private getTypeCompletions(): vscode.CompletionItem[] {
     return TYPES.map((type) => {
       const item = new vscode.CompletionItem(
