@@ -786,6 +786,28 @@ describe("register member completions", () => {
     );
     expect(types).not.toContain("bitmap8");
     expect(types).not.toContain("Port");
+    const inScope = await labelsAt(
+      "scope Gpio {\n    register Port {\n        0x00 rw ",
+      [
+        { name: "Gpio", fullName: "Gpio", id: "Gpio", kind: "namespace" },
+        {
+          name: "Pins",
+          fullName: "Gpio__Pins",
+          id: "Gpio.Pins",
+          parentId: "Gpio",
+          kind: "bitmap",
+        },
+        {
+          name: "Flags",
+          fullName: "Other__Flags",
+          id: "Other.Flags",
+          parentId: "Other",
+          kind: "bitmap",
+        },
+      ],
+    );
+    expect(inScope).toContain("Pins");
+    expect(inScope).not.toContain("Flags");
   });
 
   it("offers neither while an offset expression is unfinished", async () => {

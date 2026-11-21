@@ -443,7 +443,11 @@ export default class CNextCompletionProvider
         word ? linePrefix.slice(0, -word.length) : linePrefix,
       );
       if (ACCESS_MODIFIER_BEFORE_CURSOR.test(stem)) {
-        return this.getRegisterMemberTypeCompletions(symbols, document.uri);
+        return this.getRegisterMemberTypeCompletions(
+          symbols,
+          document.uri,
+          currentScope,
+        );
       }
       if (CNextCompletionProvider.expectsAccessModifier(registerBlock, stem)) {
         return this.getAccessModifierCompletions();
@@ -736,15 +740,19 @@ export default class CNextCompletionProvider
   /**
    * The types a register member can have: the primitives except the bitmapN
    * keywords, which only begin a bitmap declaration, and the bitmaps, enums
-   * and structs of this file and its includes (a register type is E0936)
+   * and structs of this file, its includes and the current scope (a register
+   * type is E0936)
    */
   private getRegisterMemberTypeCompletions(
     symbols: ISymbolInfo[],
     documentUri: vscode.Uri,
+    currentScope: string | null,
   ): vscode.CompletionItem[] {
     const included = this.workspaceIndex?.getIncludedSymbols(documentUri) ?? [];
     const userTypes = [...symbols, ...included].filter(
-      (s) => !s.parentId && REGISTER_MEMBER_USER_TYPE_KINDS.has(s.kind),
+      (s) =>
+        (!s.parentId || s.parentId === currentScope) &&
+        REGISTER_MEMBER_USER_TYPE_KINDS.has(s.kind),
     );
     return [
       ...this.getTypeCompletions().filter(
