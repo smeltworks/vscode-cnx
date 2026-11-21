@@ -678,3 +678,66 @@ describe("getMemberCompletions", () => {
     });
   });
 });
+
+// ADR-072: a register member's completions come from the block the cursor is
+// in -- a register body, one of its offset groups, or neither
+describe("register member completions", () => {
+  const MODIFIERS = ["rw", "ro", "wo", "w1c", "w1s"];
+
+  const labelsAt = async (content: string): Promise<string[]> => {
+    const document = vscode.createMockTextDocument({ content });
+    const lines = content.split("\n");
+    const provider = new CNextCompletionProvider(
+      new SymbolResolver(null),
+      undefined,
+      {
+        debug: () => {},
+        serverClient: { parseSymbols: async () => ({ symbols: [] }) },
+      } as never,
+    );
+    const items = await provider.provideCompletionItems(
+      document,
+      new vscode.Position(lines.length - 1, lines.at(-1)!.length),
+      vscode.createMockCancellationToken(),
+      vscode.createMockCompletionContext(),
+    );
+    return items.map((item) => String(item.label));
+  };
+
+  it.each([
+    ["a literal offset", "register R {\n    0x00 "],
+    ["a named offset", "register R {\n    CTRL_OFFSET "],
+    ["an 0X offset", "register R {\n    0X10 "],
+    ["an offset expression", "register R {\n    BASE + 4 "],
+    ["a group member's start", "register R {\n    0x00 {\n        "],
+    ["a partly typed modifier", "register R {\n    0x00 r"],
+    [
+      "a member after a group",
+      "register R {\n    0x00 {\n        ro u8 A,\n    },\n    0x04 ",
+    ],
+  ])("offers access modifiers after %s", async (_name, content) => {
+    expect(await labelsAt(content)).toEqual(MODIFIERS);
+  });
+
+  it("offers types after an access modifier, in a register and in a group", async () => {
+    const types = await labelsAt("register R {\n    0x00 rw ");
+    expect(types).toContain("u32");
+    expect(types).not.toContain("rw");
+    expect(await labelsAt("register R {\n    0x00 {\n        ro ")).toEqual(
+      types,
+    );
+  });
+
+  it("offers neither outside a register", async () => {
+    const types = await labelsAt("register R {\n    0x00 rw ");
+    const continuation = await labelsAt(
+      "void f() {\n    u32 x <- 1 +\n        5 ",
+    );
+    expect(continuation).not.toEqual(MODIFIERS);
+    expect(continuation).not.toEqual(types);
+    expect(
+      await labelsAt("register R {\n    0x00 rw u8 A,\n}\n0x00 "),
+    ).not.toEqual(MODIFIERS);
+    expect(await labelsAt("Point p <- {x: ")).not.toEqual(types);
+  });
+});

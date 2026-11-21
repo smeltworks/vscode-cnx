@@ -101,9 +101,14 @@
             "1": { "name": "punctuation.definition.block.end.cnext" }
           },
           "patterns": [
+            { "include": "#comments" },
             { "include": "#register-group" },
-            { "include": "#register-field" },
-            { "include": "#comments" }
+            { "include": "#register-member" },
+            { "include": "#literals" },
+            { "include": "#operators" },
+            { "include": "#keywords" },
+            { "include": "#types" },
+            { "include": "#register-offset-name" }
           ]
         }
       ]
@@ -112,39 +117,41 @@
       "patterns": [
         {
           "name": "meta.register.group.cnext",
-          "begin": "(0x[0-9a-fA-F]+|\\d+|\\w+)\\s*(\\{)",
+          "begin": "(\\{)",
           "beginCaptures": {
-            "1": { "name": "constant.numeric.cnext" },
-            "2": { "name": "punctuation.definition.block.begin.cnext" }
+            "1": { "name": "punctuation.definition.block.begin.cnext" }
           },
           "end": "(\\})",
           "endCaptures": {
             "1": { "name": "punctuation.definition.block.end.cnext" }
           },
           "patterns": [
-            {
-              "match": "\\b(rw|ro|wo|w1c|w1s)\\s+(\\w+)\\s+(\\w+)",
-              "captures": {
-                "1": { "name": "storage.modifier.cnext" },
-                "2": { "name": "storage.type.cnext" },
-                "3": { "name": "entity.name.field.register.cnext" }
-              }
-            },
-            { "include": "#comments" }
+            { "include": "#comments" },
+            { "include": "#register-member" },
+            { "include": "#keywords" },
+            { "include": "#types" }
           ]
         }
       ]
     },
-    "register-field": {
+    "register-member": {
       "patterns": [
         {
-          "match": "(0x[0-9a-fA-F]+|\\d+|\\w+)\\s+(rw|ro|wo|w1c|w1s)\\s+(\\w+)\\s+(\\w+)",
+          "match": "\\b(rw|ro|wo|w1c|w1s)\\s+(\\w+(?:\\.\\w+)*)((?:\\[[^\\]]*\\])*)\\s+(\\w+)",
           "captures": {
-            "1": { "name": "constant.numeric.cnext" },
-            "2": { "name": "storage.modifier.cnext" },
-            "3": { "name": "storage.type.cnext" },
+            "1": { "name": "storage.modifier.cnext" },
+            "2": { "name": "storage.type.cnext" },
+            "3": { "patterns": [{ "include": "#literals" }] },
             "4": { "name": "entity.name.field.register.cnext" }
           }
+        }
+      ]
+    },
+    "register-offset-name": {
+      "patterns": [
+        {
+          "name": "variable.other.constant.cnext",
+          "match": "\\b[A-Za-z_]\\w*\\b"
         }
       ]
     },
@@ -268,10 +275,6 @@
         {
           "name": "keyword.operator.assignment.cnext",
           "match": "<-"
-        },
-        {
-          "name": "keyword.operator.address.cnext",
-          "match": "@"
         },
         {
           "name": "keyword.operator.comparison.cnext",

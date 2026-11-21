@@ -106,6 +106,12 @@ const TYPES = [
  * Register access modifiers
  */
 const ACCESS_MODIFIERS = ["rw", "ro", "wo", "w1c", "w1s"];
+const ACCESS_MODIFIER_BEFORE_CURSOR = new RegExp(
+  `\\s(?:${ACCESS_MODIFIERS.join("|")})\\s+$`,
+);
+const ACCESS_MODIFIER_WORD = new RegExp(
+  `\\b(?:${ACCESS_MODIFIERS.join("|")})\\b`,
+);
 
 /**
  * Boolean and null literals
@@ -423,9 +429,20 @@ export default class CNextCompletionProvider
       return cppMembers;
     }
 
-    // Check if we're in a register member context (after access modifier)
-    if (this.isInRegisterContext(linePrefix)) {
-      return this.getAccessModifierCompletions();
+    // Inside a register or one of its offset groups (ADR-072). The partial
+    // word being typed is left off, so the list shows while typing.
+    const registerBlock = ScopeTracker.getRegisterBlock(
+      [...source.split("\n").slice(0, position.line), linePrefix].join("\n"),
+    );
+    if (registerBlock !== null) {
+      const word = extractTrailingWord(linePrefix);
+      const stem = word ? linePrefix.slice(0, -word.length) : linePrefix;
+      if (ACCESS_MODIFIER_BEFORE_CURSOR.test(stem)) {
+        return this.getTypeCompletions();
+      }
+      if (CNextCompletionProvider.expectsAccessModifier(registerBlock, stem)) {
+        return this.getAccessModifierCompletions();
+      }
     }
 
     // Check if we're in a type context
@@ -794,25 +811,24 @@ export default class CNextCompletionProvider
   }
 
   /**
-   * Check if cursor is in a register member definition context
+   * Whether a register member's access modifier comes next: in a register
+   * body after the offset, any constant expression (`0x00 `, `BASE + 4 `);
+   * in an offset group at the start of a member
    */
-  private isInRegisterContext(linePrefix: string): boolean {
-    // Inside a register block, after the member's offset (ADR-072)
-    // e.g., "    0x00 " <- expecting access modifier
-    return /^\s+(?:0x[0-9a-fA-F]+|\d+)\s+$/.test(linePrefix);
+  private static expectsAccessModifier(
+    block: "register" | "group",
+    stem: string,
+  ): boolean {
+    if (block === "group") return stem.trim() === "";
+    return (
+      stem.trim() !== "" && /\s$/.test(stem) && !ACCESS_MODIFIER_WORD.test(stem)
+    );
   }
 
   /**
    * Check if cursor is in a type context
    */
   private isInTypeContext(linePrefix: string): boolean {
-    // After colon (`x: `), or a register member's access modifier: "0x00 rw "
-    if (
-      /:\s*$/.test(linePrefix) ||
-      /\s(?:rw|ro|wo|w1c|w1s)\s+$/.test(linePrefix)
-    ) {
-      return true;
-    }
     // At start of variable declaration (simplified check)
     if (/^\s*$/.test(linePrefix)) {
       return true;
