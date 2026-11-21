@@ -722,6 +722,18 @@ describe("register member completions", () => {
     ["a partly typed modifier", "register R {\n    0x00 r"],
     ["a group member on the brace's line", "register R {\n    0x00 { "],
     ["a ternary offset", "register R {\n    (mode = 1) ? 0x10 : 0x20 "],
+    [
+      "a ternary offset wrapped before its ':'",
+      "register R {\n    (mode = 1) ? 0x10\n        : 0x20 ",
+    ],
+    [
+      "an offset wrapped inside its parentheses",
+      "register R {\n    (base +\n        4) ",
+    ],
+    [
+      "an offset wrapped before an operator",
+      "register R {\n    (base\n        + 4) ",
+    ],
     ["an offset and a comment", "register R {\n    0x00 /* status */ "],
     [
       "an offset below a comment holding a brace",

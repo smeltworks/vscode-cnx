@@ -891,8 +891,9 @@ export default class CNextCompletionProvider
       /\s$/.test(member) &&
       !ACCESS_MODIFIER_WORD.test(offset) &&
       !OFFSET_CONTINUES.test(offset) &&
-      offset.split("(").length === offset.split(")").length &&
-      offset.split("?").length === offset.split(":").length
+      // an earlier line may open the ( or ? that this line closes
+      offset.split("(").length <= offset.split(")").length &&
+      offset.split("?").length <= offset.split(":").length
     );
   }
 
