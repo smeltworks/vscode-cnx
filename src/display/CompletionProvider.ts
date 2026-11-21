@@ -110,8 +110,14 @@ const ACCESS_MODIFIERS = ["rw", "ro", "wo", "w1c", "w1s"];
 const ACCESS_MODIFIER_BEFORE_CURSOR = new RegExp(
   `\\s(?:${ACCESS_MODIFIERS.join("|")})\\s+$`,
 );
-const REGISTER_MEMBER_USER_TYPE_KINDS = new Set(["bitmap", "enum", "struct"]);
-const OFFSET_CONTINUES = /[-+*/%&|^~<>(!]$/;
+// "type" is a C header's typedef (parseCHeader); parseSymbols never sends it
+const REGISTER_MEMBER_USER_TYPE_KINDS = new Set([
+  "bitmap",
+  "enum",
+  "struct",
+  "type",
+]);
+const OFFSET_CONTINUES = /[-+*/%&|^~<>(!:]$/;
 const ACCESS_MODIFIER_WORD = new RegExp(
   `\\b(?:${ACCESS_MODIFIERS.join("|")})\\b`,
 );
@@ -297,6 +303,20 @@ function createSymbolCompletion(symbol: ISymbolInfo): vscode.CompletionItem {
     item.detail = symbol.kind;
   }
 
+  return item;
+}
+
+/**
+ * Create a completion item for a symbol of an included file, with the
+ * file's name after its detail
+ */
+function createIncludedSymbolCompletion(
+  symbol: ISymbolInfo & { sourceFile?: string },
+): vscode.CompletionItem {
+  const item = createSymbolCompletion(symbol);
+  if (symbol.sourceFile) {
+    item.detail = `${item.detail || ""} (${path.basename(symbol.sourceFile)})`;
+  }
   return item;
 }
 
@@ -736,27 +756,34 @@ export default class CNextCompletionProvider
 
   /**
    * The types a register member can have: the primitives except the bitmapN
-   * keywords, which only begin a bitmap declaration, and the bitmaps, enums
-   * and structs of this file, its includes and the current scope (a register
-   * type is E0936)
+   * keywords, which only begin a bitmap declaration, and the bitmaps, enums,
+   * structs and C typedefs of this file, its includes and the current scope
+   * (a register type is E0936)
    */
   private getRegisterMemberTypeCompletions(
     symbols: ISymbolInfo[],
     documentUri: vscode.Uri,
     currentScope: string | null,
   ): vscode.CompletionItem[] {
+    const isMemberType = (s: ISymbolInfo): boolean =>
+      (!s.parentId || s.parentId === currentScope) &&
+      REGISTER_MEMBER_USER_TYPE_KINDS.has(s.kind);
     const included = this.workspaceIndex?.getIncludedSymbols(documentUri) ?? [];
-    const userTypes = [...symbols, ...included].filter(
-      (s) =>
-        (!s.parentId || s.parentId === currentScope) &&
-        REGISTER_MEMBER_USER_TYPE_KINDS.has(s.kind),
-    );
-    return [
+    const items = [
       ...this.getTypeCompletions().filter(
         (item) => !/^bitmap\d+$/.test(String(item.label)),
       ),
-      ...userTypes.map(createSymbolCompletion),
+      ...symbols.filter(isMemberType).map(createSymbolCompletion),
+      ...included.filter(isMemberType).map(createIncludedSymbolCompletion),
     ];
+    // parseCHeader sends a typedef'd struct twice, as "struct" and as "type"
+    const labels = new Set<string>();
+    return items.filter((item) => {
+      const label = String(item.label);
+      if (labels.has(label)) return false;
+      labels.add(label);
+      return true;
+    });
   }
 
   /**
@@ -832,12 +859,7 @@ export default class CNextCompletionProvider
     if (this.workspaceIndex && documentUri) {
       const headerSymbols = this.workspaceIndex.getIncludedSymbols(documentUri);
       for (const sym of headerSymbols) {
-        const item = createSymbolCompletion(sym);
-        // Mark as coming from a header
-        if (sym.sourceFile) {
-          item.detail = `${item.detail || ""} (${path.basename(sym.sourceFile)})`;
-        }
-        items.push(item);
+        items.push(createIncludedSymbolCompletion(sym));
       }
     }
 
@@ -847,8 +869,9 @@ export default class CNextCompletionProvider
   /**
    * Whether a register member's access modifier comes next: in a register
    * body after a complete offset, any constant expression (`0x00 `,
-   * `BASE + 4 `, but not `BASE + ` or `(BASE `); in an offset group at the
-   * start of a member. A member starts after the line's last `{`, `}` or `,`.
+   * `BASE + 4 `, `(mode = 1) ? 0x10 : 0x20 `, but not `BASE + `, `(BASE ` or
+   * `(mode = 1) ? 0x10 `); in an offset group at the start of a member. A
+   * member starts after the line's last `{`, `}` or `,`.
    */
   private static expectsAccessModifier(
     block: "register" | "group",
@@ -868,7 +891,8 @@ export default class CNextCompletionProvider
       /\s$/.test(member) &&
       !ACCESS_MODIFIER_WORD.test(offset) &&
       !OFFSET_CONTINUES.test(offset) &&
-      offset.split("(").length === offset.split(")").length
+      offset.split("(").length === offset.split(")").length &&
+      offset.split("?").length === offset.split(":").length
     );
   }
 

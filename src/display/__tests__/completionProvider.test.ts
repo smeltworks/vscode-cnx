@@ -684,28 +684,34 @@ describe("getMemberCompletions", () => {
 describe("register member completions", () => {
   const MODIFIERS = ["rw", "ro", "wo", "w1c", "w1s"];
 
-  const labelsAt = async (
+  const itemsAt = async (
     content: string,
     symbols: object[] = [],
-  ): Promise<string[]> => {
+    workspaceIndex?: WorkspaceIndex,
+  ): Promise<vscode.CompletionItem[]> => {
     const document = vscode.createMockTextDocument({ content });
     const lines = content.split("\n");
     const provider = new CNextCompletionProvider(
-      new SymbolResolver(null),
-      undefined,
+      new SymbolResolver(workspaceIndex ?? null),
+      workspaceIndex,
       {
         debug: () => {},
         serverClient: { parseSymbols: async () => ({ symbols }) },
       } as never,
     );
-    const items = await provider.provideCompletionItems(
+    return provider.provideCompletionItems(
       document,
       new vscode.Position(lines.length - 1, lines.at(-1)!.length),
       vscode.createMockCancellationToken(),
       vscode.createMockCompletionContext(),
     );
-    return items.map((item) => String(item.label));
   };
+
+  const labelsAt = async (
+    content: string,
+    symbols: object[] = [],
+  ): Promise<string[]> =>
+    (await itemsAt(content, symbols)).map((item) => String(item.label));
 
   it.each([
     ["a literal offset", "register R {\n    0x00 "],
@@ -715,6 +721,7 @@ describe("register member completions", () => {
     ["a group member's start", "register R {\n    0x00 {\n        "],
     ["a partly typed modifier", "register R {\n    0x00 r"],
     ["a group member on the brace's line", "register R {\n    0x00 { "],
+    ["a ternary offset", "register R {\n    (mode = 1) ? 0x10 : 0x20 "],
     ["an offset and a comment", "register R {\n    0x00 /* status */ "],
     [
       "an offset below a comment holding a brace",
@@ -810,7 +817,72 @@ describe("register member completions", () => {
     expect(inScope).not.toContain("Flags");
   });
 
+  it("offers an included header's types after an access modifier, once each", async () => {
+    WorkspaceIndex.getInstance().dispose();
+    const index = WorkspaceIndex.getInstance();
+    const raw = index as unknown as {
+      headerCache: {
+        set: (
+          uri: vscode.Uri,
+          symbols: object[],
+          mtime: number,
+          hasErrors: boolean,
+        ) => void;
+      };
+      scanner: { includeDependencies: Map<string, string[]> };
+    };
+    // What parseCHeader sends for `typedef struct { ... } Pair;`,
+    // `typedef enum { ... } Mode;` and `void init(void);`, in the shape
+    // WorkspaceScanner.indexHeaderFile stores it
+    const header = "/test/hw.h";
+    raw.headerCache.set(
+      vscode.Uri.file(header),
+      [
+        { name: "Pair", fullName: "Pair", kind: "struct", sourceFile: header },
+        { name: "Pair", fullName: "Pair", kind: "type", sourceFile: header },
+        { name: "Mode", fullName: "Mode", kind: "type", sourceFile: header },
+        {
+          name: "init",
+          fullName: "init",
+          kind: "function",
+          sourceFile: header,
+        },
+      ],
+      Date.now(),
+      false,
+    );
+    raw.scanner.includeDependencies.set("/test/file.cnx", [header]);
+    try {
+      const items = await itemsAt("register R {\n    0x00 rw ", [], index);
+      expect(
+        items
+          .filter((item) =>
+            ["Pair", "Mode", "init"].includes(String(item.label)),
+          )
+          .map((item) => `${String(item.label)}: ${item.detail}`),
+      ).toEqual(["Pair: struct (hw.h)", "Mode: type (hw.h)"]);
+      // the global list names the header the same way
+      const global = await itemsAt("u32 x <- ", [], index);
+      expect(
+        global
+          .filter((item) => item.label === "Mode")
+          .map((item) => item.detail),
+      ).toEqual(["type (hw.h)"]);
+    } finally {
+      index.dispose();
+    }
+  });
+
   it("offers neither while an offset expression is unfinished", async () => {
+    expect(await labelsAt("register R {\n    (mode = 1) ? ")).not.toEqual(
+      MODIFIERS,
+    );
+    expect(await labelsAt("register R {\n    (mode = 1) ? 0x10 ")).not.toEqual(
+      MODIFIERS,
+    );
+    expect(
+      await labelsAt("register R {\n    (mode = 1) ? 0x10 : "),
+    ).not.toEqual(MODIFIERS);
     expect(await labelsAt("register R {\n    BASE + ")).not.toEqual(MODIFIERS);
     expect(await labelsAt("register R {\n    BASE + O")).not.toEqual(MODIFIERS);
     expect(await labelsAt("register R {\n    (BASE ")).not.toEqual(MODIFIERS);
