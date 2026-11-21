@@ -80,3 +80,29 @@ u32 globalVar;`;
     expect(ScopeTracker.getCurrentScope(source, 1)).toBeNull();
   });
 });
+
+describe("ScopeTracker.getRegisterBlock", () => {
+  it("finds a register body, a group in it, and neither outside", () => {
+    expect(ScopeTracker.getRegisterBlock("register R {\n    0x00 ")).toBe(
+      "register",
+    );
+    expect(
+      ScopeTracker.getRegisterBlock("register R {\n    0x00 {\n        "),
+    ).toBe("group");
+    expect(ScopeTracker.getRegisterBlock("void f() {\n    ")).toBeNull();
+  });
+
+  it("ignores a brace in a line comment", () => {
+    expect(
+      ScopeTracker.getRegisterBlock("register R {\n    // 0x00 {\n    0x04 "),
+    ).toBe("register");
+  });
+
+  it("finds a register below a #pragma line", () => {
+    expect(
+      ScopeTracker.getRegisterBlock(
+        "#pragma target cortex-m7\nregister R {\n    0x00 ",
+      ),
+    ).toBe("register");
+  });
+});

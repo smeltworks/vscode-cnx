@@ -110,6 +110,7 @@ const ACCESS_MODIFIERS = ["rw", "ro", "wo", "w1c", "w1s"];
 const ACCESS_MODIFIER_BEFORE_CURSOR = new RegExp(
   `\\s(?:${ACCESS_MODIFIERS.join("|")})\\s+$`,
 );
+const REGISTER_MEMBER_USER_TYPE_KINDS = new Set(["bitmap", "enum", "struct"]);
 const OFFSET_CONTINUES = /[-+*/%&|^~<>(!]$/;
 const ACCESS_MODIFIER_WORD = new RegExp(
   `\\b(?:${ACCESS_MODIFIERS.join("|")})\\b`,
@@ -442,7 +443,7 @@ export default class CNextCompletionProvider
         word ? linePrefix.slice(0, -word.length) : linePrefix,
       );
       if (ACCESS_MODIFIER_BEFORE_CURSOR.test(stem)) {
-        return this.getTypeCompletions();
+        return this.getRegisterMemberTypeCompletions(symbols, document.uri);
       }
       if (CNextCompletionProvider.expectsAccessModifier(registerBlock, stem)) {
         return this.getAccessModifierCompletions();
@@ -450,7 +451,7 @@ export default class CNextCompletionProvider
     }
 
     // Check if we're in a type context
-    if (this.isInTypeContext(linePrefix)) {
+    if (registerBlock === null && this.isInTypeContext(linePrefix)) {
       return this.getTypeCompletions();
     }
 
@@ -732,6 +733,27 @@ export default class CNextCompletionProvider
   /**
    * Get completions for type contexts
    */
+  /**
+   * The types a register member can have: the primitives except the bitmapN
+   * keywords, which only begin a bitmap declaration, and the bitmaps, enums
+   * and structs of this file and its includes (a register type is E0936)
+   */
+  private getRegisterMemberTypeCompletions(
+    symbols: ISymbolInfo[],
+    documentUri: vscode.Uri,
+  ): vscode.CompletionItem[] {
+    const included = this.workspaceIndex?.getIncludedSymbols(documentUri) ?? [];
+    const userTypes = [...symbols, ...included].filter(
+      (s) => !s.parentId && REGISTER_MEMBER_USER_TYPE_KINDS.has(s.kind),
+    );
+    return [
+      ...this.getTypeCompletions().filter(
+        (item) => !/^bitmap\d+$/.test(String(item.label)),
+      ),
+      ...userTypes.map(createSymbolCompletion),
+    ];
+  }
+
   private getTypeCompletions(): vscode.CompletionItem[] {
     return TYPES.map((type) => {
       const item = new vscode.CompletionItem(
@@ -818,14 +840,18 @@ export default class CNextCompletionProvider
    * Whether a register member's access modifier comes next: in a register
    * body after a complete offset, any constant expression (`0x00 `,
    * `BASE + 4 `, but not `BASE + ` or `(BASE `); in an offset group at the
-   * start of a member. A member starts after the line's last `{` or `,`.
+   * start of a member. A member starts after the line's last `{`, `}` or `,`.
    */
   private static expectsAccessModifier(
     block: "register" | "group",
     stem: string,
   ): boolean {
     const member = stem.slice(
-      Math.max(stem.lastIndexOf("{"), stem.lastIndexOf(",")) + 1,
+      Math.max(
+        stem.lastIndexOf("{"),
+        stem.lastIndexOf("}"),
+        stem.lastIndexOf(","),
+      ) + 1,
     );
     const offset = member.trim();
     if (block === "group") return offset === "";

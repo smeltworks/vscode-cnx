@@ -684,7 +684,10 @@ describe("getMemberCompletions", () => {
 describe("register member completions", () => {
   const MODIFIERS = ["rw", "ro", "wo", "w1c", "w1s"];
 
-  const labelsAt = async (content: string): Promise<string[]> => {
+  const labelsAt = async (
+    content: string,
+    symbols: object[] = [],
+  ): Promise<string[]> => {
     const document = vscode.createMockTextDocument({ content });
     const lines = content.split("\n");
     const provider = new CNextCompletionProvider(
@@ -692,7 +695,7 @@ describe("register member completions", () => {
       undefined,
       {
         debug: () => {},
-        serverClient: { parseSymbols: async () => ({ symbols: [] }) },
+        serverClient: { parseSymbols: async () => ({ symbols }) },
       } as never,
     );
     const items = await provider.provideCompletionItems(
@@ -713,6 +716,14 @@ describe("register member completions", () => {
     ["a partly typed modifier", "register R {\n    0x00 r"],
     ["a group member on the brace's line", "register R {\n    0x00 { "],
     ["an offset and a comment", "register R {\n    0x00 /* status */ "],
+    [
+      "an offset below a comment holding a brace",
+      "register R {\n    // 0x00 {\n    0x04 ",
+    ],
+    [
+      "an offset in a register below a #pragma line",
+      "#pragma target cortex-m7\nregister R {\n    0x00 ",
+    ],
     ["a member after another on one line", "register R { 0x00 rw u8 A, 0x04 "],
     [
       "a member after a group",
@@ -725,6 +736,7 @@ describe("register member completions", () => {
   it("offers types after an access modifier, in a register and in a group", async () => {
     const types = await labelsAt("register R {\n    0x00 rw ");
     expect(types).toContain("u32");
+    expect(await labelsAt("register R {\n    0x00 rw u")).toEqual(types);
     expect(types).not.toContain("rw");
     expect(await labelsAt("register R {\n    0x00 {\n        ro ")).toEqual(
       types,
@@ -742,6 +754,38 @@ describe("register member completions", () => {
       await labelsAt("register R {\n    0x00 rw u8 A,\n}\n0x00 "),
     ).not.toEqual(MODIFIERS);
     expect(await labelsAt("Point p <- {x: ")).not.toEqual(types);
+  });
+
+  it.each([
+    ["a member's name", "register R {\n    0x00 rw u32 "],
+    ["a group member's name", "register R {\n    0x00 {\n        ro u8 "],
+    ["a blank line in a register", "register R {\n    "],
+    ["an offset with no space after it", "register R {\n    (BASE)"],
+    [
+      "a group's closing brace",
+      "register R {\n    0x00 {\n        ro u8 A,\n    } ",
+    ],
+  ])("offers no access modifiers at %s", async (_name, content) => {
+    expect(await labelsAt(content)).not.toEqual(MODIFIERS);
+  });
+
+  it("offers no types on a blank line in a register", async () => {
+    const types = await labelsAt("void f() {\n    ");
+    expect(await labelsAt("register R {\n    ")).not.toEqual(types);
+  });
+
+  it("offers the file's bitmaps, enums and structs after an access modifier", async () => {
+    const types = await labelsAt("register R {\n    0x00 rw ", [
+      { name: "Flags", fullName: "Flags", id: "Flags", kind: "bitmap" },
+      { name: "Mode", fullName: "Mode", id: "Mode", kind: "enum" },
+      { name: "Pair", fullName: "Pair", id: "Pair", kind: "struct" },
+      { name: "Port", fullName: "Port", id: "Port", kind: "register" },
+    ]);
+    expect(types).toEqual(
+      expect.arrayContaining(["u32", "Flags", "Mode", "Pair"]),
+    );
+    expect(types).not.toContain("bitmap8");
+    expect(types).not.toContain("Port");
   });
 
   it("offers neither while an offset expression is unfinished", async () => {
