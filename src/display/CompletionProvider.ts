@@ -12,6 +12,7 @@ import {
   extractTrailingWord,
   parseMemberAccessChain,
   countBraceChange,
+  stripComments,
 } from "../state/utils";
 import {
   getAccessDescription,
@@ -437,7 +438,9 @@ export default class CNextCompletionProvider
     );
     if (registerBlock !== null) {
       const word = extractTrailingWord(linePrefix);
-      const stem = word ? linePrefix.slice(0, -word.length) : linePrefix;
+      const stem = stripComments(
+        word ? linePrefix.slice(0, -word.length) : linePrefix,
+      );
       if (ACCESS_MODIFIER_BEFORE_CURSOR.test(stem)) {
         return this.getTypeCompletions();
       }

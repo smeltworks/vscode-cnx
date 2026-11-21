@@ -712,6 +712,7 @@ describe("register member completions", () => {
     ["a group member's start", "register R {\n    0x00 {\n        "],
     ["a partly typed modifier", "register R {\n    0x00 r"],
     ["a group member on the brace's line", "register R {\n    0x00 { "],
+    ["an offset and a comment", "register R {\n    0x00 /* status */ "],
     ["a member after another on one line", "register R { 0x00 rw u8 A, 0x04 "],
     [
       "a member after a group",
