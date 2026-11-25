@@ -1,9 +1,9 @@
 name: Project sync
 on:
   issues:
-    types: [opened, assigned, reopened]
+    types: [opened, assigned, unassigned]
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, closed]
 jobs:
   sync:
     uses: smeltworks/cnx/.github/workflows/project-sync.yml@main
